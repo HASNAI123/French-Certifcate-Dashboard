@@ -1,0 +1,27 @@
+{
+  "name": "energy-auctions",
+  "version": "1.0.0",
+  "description": "French Energy Certificate Auctions Dashboard - Extract, store, and visualize auction data from EEX",
+  "main": "backend/index.js",
+  "scripts": {
+    "start": "cd backend && node index.js",
+    "dev": "cd backend && nodemon index.js",
+    "install-deps": "cd backend && npm install",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "energy",
+    "auctions",
+    "eex",
+    "french",
+    "certificates",
+    "dashboard",
+    "visualization",
+    "web-scraping"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
