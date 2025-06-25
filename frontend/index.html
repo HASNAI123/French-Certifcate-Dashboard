@@ -299,7 +299,19 @@
 
     <script>
         let priceChart, volumeChart;
-        const API_BASE = 'http://localhost:3001/api';
+        
+        // API Configuration - Firebase Functions URLs
+        const API_BASE = window.location.hostname === 'localhost' 
+            ? 'http://localhost:5001/french-energy-certificates/us-central1' 
+            : 'https://us-central1-french-energy-certificates.cloudfunctions.net';
+        
+        // API endpoints
+        const API_ENDPOINTS = {
+            auctions: `${API_BASE}/getAuctions`,
+            statistics: `${API_BASE}/getStatistics`,
+            extractData: `${API_BASE}/extractData`,
+            clearData: `${API_BASE}/clearData`
+        };
 
         // Initialize charts
         function initializeCharts() {
@@ -525,8 +537,8 @@
         async function loadData() {
             try {
                 const [auctionsResponse, statsResponse] = await Promise.all([
-                    fetch(`${API_BASE}/auctions`),
-                    fetch(`${API_BASE}/statistics`)
+                    fetch(API_ENDPOINTS.auctions),
+                    fetch(API_ENDPOINTS.statistics)
                 ]);
 
                 if (!auctionsResponse.ok || !statsResponse.ok) {
@@ -551,7 +563,7 @@
             try {
                 showMessage('Extracting data from EEX...', 'success');
                 
-                const response = await fetch(`${API_BASE}/extract-data`, {
+                const response = await fetch(API_ENDPOINTS.extractData, {
                     method: 'POST'
                 });
 
@@ -578,7 +590,7 @@
             }
 
             try {
-                const response = await fetch(`${API_BASE}/auctions`, {
+                const response = await fetch(API_ENDPOINTS.clearData, {
                     method: 'DELETE'
                 });
 

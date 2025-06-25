@@ -7,6 +7,8 @@
     "start": "cd backend && node index.js",
     "dev": "cd backend && nodemon index.js",
     "install-deps": "cd backend && npm install",
+    "deploy:firebase": "./deploy-firebase.sh",
+    "deploy:init": "firebase init hosting",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -17,11 +19,16 @@
     "certificates",
     "dashboard",
     "visualization",
-    "web-scraping"
+    "web-scraping",
+    "firebase",
+    "deployment"
   ],
   "author": "",
   "license": "ISC",
   "engines": {
     "node": ">=14.0.0"
+  },
+  "devDependencies": {
+    "firebase-tools": "^13.0.0"
   }
 }
