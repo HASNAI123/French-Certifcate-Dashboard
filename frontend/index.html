@@ -235,6 +235,34 @@
             border-radius: 10px;
         }
 
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         @media (max-width: 768px) {
             .charts-grid {
                 grid-template-columns: 1fr;
@@ -296,16 +324,19 @@
 
         <div class="stats-grid" id="statsGrid">
             <div class="stat-card">
-                <h3 id="totalRegions">-</h3>
-                <p>Total Regions</p>
-            </div>
-            <div class="stat-card">
-                <h3 id="totalTechnologies">-</h3>
-                <p>Total Technologies</p>
+                <h3 id="totalAuctions">-</h3>
+                <p>Total Auctions</p>
+                <div class="loading-overlay" id="statsLoading">
+                    <div class="spinner"></div>
+                </div>
             </div>
             <div class="stat-card">
                 <h3 id="avgPrice">-</h3>
                 <p>Average Price (€/MWh)</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="avgVolume">-</h3>
+                <p>Average Volume (MWh)</p>
             </div>
             <div class="stat-card">
                 <h3 id="totalVolume">-</h3>
@@ -317,10 +348,18 @@
             <div class="chart-container">
                 <h3>Region Results: Volume Offered vs Allocated</h3>
                 <canvas id="regionChart"></canvas>
+                <div class="loading-overlay" id="regionChartLoading">
+                    <div class="spinner"></div>
+                    <p>Loading region data...</p>
+                </div>
             </div>
             <div class="chart-container">
                 <h3>Technology Results: Volume Offered vs Allocated</h3>
                 <canvas id="techChart"></canvas>
+                <div class="loading-overlay" id="techChartLoading">
+                    <div class="spinner"></div>
+                    <p>Loading technology data...</p>
+                </div>
             </div>
         </div>
 
@@ -328,10 +367,18 @@
             <div class="chart-container">
                 <h3>Price Analysis: Weighted Average Price by Region</h3>
                 <canvas id="priceChart"></canvas>
+                <div class="loading-overlay" id="priceChartLoading">
+                    <div class="spinner"></div>
+                    <p>Loading price data...</p>
+                </div>
             </div>
             <div class="chart-container">
                 <h3>Volume vs Price Relationship</h3>
                 <canvas id="scatterChart"></canvas>
+                <div class="loading-overlay" id="scatterChartLoading">
+                    <div class="spinner"></div>
+                    <p>Loading relationship data...</p>
+                </div>
             </div>
         </div>
     </div>
@@ -508,12 +555,43 @@
             });
         }
 
+        // Show/hide loading states
+        function showLoading(elementId) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.style.display = 'flex';
+            }
+        }
+
+        function hideLoading(elementId) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.style.display = 'none';
+            }
+        }
+
+        function showAllLoading() {
+            showLoading('statsLoading');
+            showLoading('regionChartLoading');
+            showLoading('techChartLoading');
+            showLoading('priceChartLoading');
+            showLoading('scatterChartLoading');
+        }
+
+        function hideAllLoading() {
+            hideLoading('statsLoading');
+            hideLoading('regionChartLoading');
+            hideLoading('techChartLoading');
+            hideLoading('priceChartLoading');
+            hideLoading('scatterChartLoading');
+        }
+
         // Update statistics
         function updateStats(stats) {
             console.log('Updating stats with:', stats);
-            document.getElementById('totalRegions').textContent = stats.total_regions || 0;
-            document.getElementById('totalTechnologies').textContent = stats.total_technologies || 0;
+            document.getElementById('totalAuctions').textContent = stats.total_auctions || 0;
             document.getElementById('avgPrice').textContent = stats.avg_price ? stats.avg_price.toFixed(2) : '-';
+            document.getElementById('avgVolume').textContent = stats.avg_volume ? stats.avg_volume.toFixed(1) : '-';
             document.getElementById('totalVolume').textContent = stats.total_volume ? stats.total_volume.toFixed(1) : '-';
             console.log('Stats updated successfully');
         }
@@ -658,6 +736,8 @@
         // Load data from API
         async function loadData() {
             try {
+                showAllLoading();
+                
                 const [auctionsResponse, statsResponse] = await Promise.all([
                     fetch(API_ENDPOINTS.auctions),
                     fetch(API_ENDPOINTS.statistics)
@@ -673,10 +753,13 @@
                 updateStats(stats);
                 updateCharts(auctions);
                 updateDataInfo(auctions);
+                
+                hideAllLoading();
 
             } catch (error) {
                 console.error('Error loading data:', error);
                 showMessage('Error loading data: ' + error.message, 'error');
+                hideAllLoading();
             }
         }
 
@@ -717,7 +800,13 @@
         // Extract new data
         async function extractData() {
             try {
+                const extractBtn = document.querySelector('button[onclick="extractData()"]');
+                const originalText = extractBtn.textContent;
+                extractBtn.textContent = 'Extracting...';
+                extractBtn.disabled = true;
+                
                 showMessage('Extracting data from EEX...', 'success');
+                showAllLoading();
                 
                 const response = await fetch(API_ENDPOINTS.extractData, {
                     method: 'POST'
@@ -746,6 +835,11 @@
             } catch (error) {
                 console.error('Error extracting data:', error);
                 showMessage('Error extracting data: ' + error.message, 'error');
+                hideAllLoading();
+            } finally {
+                const extractBtn = document.querySelector('button[onclick="extractData()"]');
+                extractBtn.textContent = 'Extract New Data';
+                extractBtn.disabled = false;
             }
         }
 
@@ -775,6 +869,9 @@
 
         // Initialize the application
         document.addEventListener('DOMContentLoaded', function() {
+            // Hide all loading states initially
+            hideAllLoading();
+            
             initializeCharts();
             loadData();
             loadApiUsage();
