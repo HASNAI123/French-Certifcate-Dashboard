@@ -36,132 +36,74 @@ async function scrapeEEXData() {
     const $ = cheerio.load(response.data);
     const auctionData = [];
 
-    // Extract Calendar 2025 data (auctioning months and production months)
-    $('table').each((i, table) => {
-      const tableText = $(table).text();
-      
-      // Check if this is the Calendar 2025 table
-      if (tableText.includes('Calendar 2025') || tableText.includes('Auctioning month')) {
-        console.log('Found Calendar 2025 table');
-        
-        $(table).find('tr').each((j, row) => {
-          const cells = $(row).find('td');
-          if (cells.length >= 2) {
-            const auctioningMonth = $(cells[0]).text().trim();
-            const productionMonth = $(cells[1]).text().trim();
-            
-            // Skip header rows and empty rows
-            if (auctioningMonth && productionMonth && 
-                !auctioningMonth.includes('Auctioning month') && 
-                !productionMonth.includes('Production month') &&
-                auctioningMonth.length > 0 && productionMonth.length > 0) {
-              
+    // Find the Results section
+    const resultsSection = $("h2:contains('Results')").closest('div.container, section, div.row').parent();
+    // Fallback: just look for all tables after the Results heading
+    let foundResults = false;
+    let resultsTables = [];
+    $('h2').each((i, el) => {
+      if ($(el).text().trim().toLowerCase() === 'results') {
+        foundResults = true;
+      }
+      if (foundResults && $(el).nextAll('table').length >= 2) {
+        resultsTables = $(el).nextAll('table').slice(0, 2).toArray();
+        return false;
+      }
+    });
+
+    // If not found, fallback to all tables with Region/Technology headers
+    if (resultsTables.length < 2) {
+      resultsTables = [];
+      $('table').each((i, table) => {
+        const text = $(table).text();
+        if (text.includes('Region') && text.includes('Volume Offered')) {
+          resultsTables.push(table);
+        } else if (text.includes('Technology') && text.includes('Volume Offered')) {
+          resultsTables.push(table);
+        }
+      });
+    }
+
+    // Parse the two results tables
+    resultsTables.forEach((table, idx) => {
+      const isRegion = $(table).text().includes('Region');
+      const isTechnology = $(table).text().includes('Technology');
+      const type = isRegion ? 'region' : isTechnology ? 'technology' : 'unknown';
+      $(table).find('tr').each((j, row) => {
+        const cells = $(row).find('td');
+        if (cells.length >= 4) {
+          const name = $(cells[0]).text().trim();
+          const volumeOfferedText = $(cells[1]).text().trim();
+          const volumeAllocatedText = $(cells[2]).text().trim();
+          const priceText = $(cells[3]).text().trim();
+          // Skip header rows
+          if (name && !name.toLowerCase().includes('region') && !name.toLowerCase().includes('technology') && !name.toLowerCase().includes('volume') && name.length > 0) {
+            // Extract numeric values
+            const volumeOffered = parseFloat(volumeOfferedText.replace(/[^\d.-]/g, ''));
+            const volumeAllocated = parseFloat(volumeAllocatedText.replace(/[^\d.-]/g, ''));
+            const price = parseFloat(priceText.replace(/[^\d.-]/g, ''));
+            if (!isNaN(volumeAllocated) && !isNaN(price)) {
               auctionData.push({
-                auction_date: auctioningMonth,
-                product_type: productionMonth,
-                volume_mwh: 0, // Calendar doesn't have volume data
-                clearing_price: 0, // Calendar doesn't have price data
-                total_volume: 0,
-                participants: 0,
-                data_type: 'calendar',
+                name,
+                type,
+                volume_offered: volumeOffered,
+                volume_allocated: volumeAllocated,
+                weighted_avg_price: price,
                 scraped_at: admin.firestore.FieldValue.serverTimestamp()
               });
             }
           }
-        });
-      }
-    });
-
-    // Extract Results data (regions and technologies)
-    $('table').each((i, table) => {
-      const tableText = $(table).text();
-      
-      // Check if this is a Results table (has regions or technologies)
-      if (tableText.includes('Region') || tableText.includes('Technology') || 
-          tableText.includes('Volume Offered') || tableText.includes('Weighted Average Price')) {
-        console.log('Found Results table');
-        
-        $(table).find('tr').each((j, row) => {
-          const cells = $(row).find('td');
-          if (cells.length >= 4) {
-            const region = $(cells[0]).text().trim();
-            const volumeOfferedText = $(cells[1]).text().trim();
-            const volumeAllocatedText = $(cells[2]).text().trim();
-            const priceText = $(cells[3]).text().trim();
-            
-            // Skip header rows
-            if (region && !region.includes('Region') && !region.includes('Technology') && 
-                !region.includes('Volume Offered') && region.length > 0) {
-              
-              // Extract numeric values
-              const volumeOffered = parseFloat(volumeOfferedText.replace(/[^\d.-]/g, ''));
-              const volumeAllocated = parseFloat(volumeAllocatedText.replace(/[^\d.-]/g, ''));
-              const price = parseFloat(priceText.replace(/[^\d.-]/g, ''));
-              
-              if (!isNaN(volumeAllocated) && !isNaN(price)) {
-                auctionData.push({
-                  auction_date: region,
-                  product_type: 'Results Data',
-                  volume_mwh: volumeAllocated,
-                  clearing_price: price,
-                  total_volume: volumeOffered,
-                  participants: Math.floor(Math.random() * 50) + 10, // Placeholder
-                  data_type: 'results',
-                  scraped_at: admin.firestore.FieldValue.serverTimestamp()
-                });
-              }
-            }
-          }
-        });
-      }
+        }
+      });
     });
 
     // If no data found, create sample data for demonstration
     if (auctionData.length === 0) {
       console.log('No structured data found, creating sample data...');
       const sampleData = [
-        {
-          auction_date: 'January 2025',
-          product_type: 'October 2024',
-          volume_mwh: 1250.5,
-          clearing_price: 45.20,
-          total_volume: 1250.5,
-          participants: 25,
-          data_type: 'calendar',
-          scraped_at: admin.firestore.FieldValue.serverTimestamp()
-        },
-        {
-          auction_date: 'February 2025',
-          product_type: 'November 2024',
-          volume_mwh: 1380.2,
-          clearing_price: 47.80,
-          total_volume: 1380.2,
-          participants: 28,
-          data_type: 'calendar',
-          scraped_at: admin.firestore.FieldValue.serverTimestamp()
-        },
-        {
-          auction_date: 'Auvergne-Rhône-Alpes',
-          product_type: 'Results Data',
-          volume_mwh: 292973,
-          clearing_price: 0.61,
-          total_volume: 292973,
-          participants: 42,
-          data_type: 'results',
-          scraped_at: admin.firestore.FieldValue.serverTimestamp()
-        },
-        {
-          auction_date: 'Wind',
-          product_type: 'Results Data',
-          volume_mwh: 2238308,
-          clearing_price: 0.60,
-          total_volume: 2238308,
-          participants: 40,
-          data_type: 'results',
-          scraped_at: admin.firestore.FieldValue.serverTimestamp()
-        }
+        { name: 'Auvergne-Rhône-Alpes', type: 'region', volume_offered: 292973, volume_allocated: 292973, weighted_avg_price: 0.61, scraped_at: admin.firestore.FieldValue.serverTimestamp() },
+        { name: 'Wind', type: 'technology', volume_offered: 2238308, volume_allocated: 2238308, weighted_avg_price: 0.60, scraped_at: admin.firestore.FieldValue.serverTimestamp() }
       ];
-      
       // Insert sample data into Firestore
       const batch = db.batch();
       sampleData.forEach(data => {
@@ -169,7 +111,6 @@ async function scrapeEEXData() {
         batch.set(docRef, data);
       });
       await batch.commit();
-      
       console.log('Sample data inserted successfully');
       return sampleData;
     }
@@ -222,25 +163,49 @@ exports.getStatistics = functions.https.onRequest((req, res) => {
     try {
       const snapshot = await db.collection('auctions').get();
       
-      let totalAuctions = 0;
+      let totalRegions = 0;
+      let totalTechnologies = 0;
       let totalPrice = 0;
       let totalVolume = 0;
       let minPrice = Infinity;
       let maxPrice = -Infinity;
+      let priceCount = 0;
+      let volumeCount = 0;
       
       snapshot.forEach(doc => {
         const data = doc.data();
-        totalAuctions++;
-        totalPrice += data.clearing_price || 0;
-        totalVolume += data.volume_mwh || 0;
-        minPrice = Math.min(minPrice, data.clearing_price || 0);
-        maxPrice = Math.max(maxPrice, data.clearing_price || 0);
+        // Check for new data structure with type field
+        if (data.type && (data.type === 'region' || data.type === 'technology') && data.weighted_avg_price > 0) {
+          if (data.type === 'region') {
+            totalRegions++;
+          } else if (data.type === 'technology') {
+            totalTechnologies++;
+          }
+          
+          totalPrice += data.weighted_avg_price || 0;
+          totalVolume += data.volume_allocated || 0;
+          minPrice = Math.min(minPrice, data.weighted_avg_price || 0);
+          maxPrice = Math.max(maxPrice, data.weighted_avg_price || 0);
+          priceCount++;
+          volumeCount++;
+        }
+        // Fallback for old data structure
+        else if (data.data_type === 'results' && data.clearing_price > 0) {
+          totalRegions++; // Assume old data is mostly regions
+          totalPrice += data.clearing_price || 0;
+          totalVolume += data.volume_mwh || 0;
+          minPrice = Math.min(minPrice, data.clearing_price || 0);
+          maxPrice = Math.max(maxPrice, data.clearing_price || 0);
+          priceCount++;
+          volumeCount++;
+        }
       });
       
       const stats = {
-        total_auctions: totalAuctions,
-        avg_price: totalAuctions > 0 ? totalPrice / totalAuctions : 0,
-        avg_volume: totalAuctions > 0 ? totalVolume / totalAuctions : 0,
+        total_regions: totalRegions,
+        total_technologies: totalTechnologies,
+        avg_price: priceCount > 0 ? totalPrice / priceCount : 0,
+        avg_volume: volumeCount > 0 ? totalVolume / volumeCount : 0,
         total_volume: totalVolume,
         min_price: minPrice === Infinity ? 0 : minPrice,
         max_price: maxPrice === -Infinity ? 0 : maxPrice

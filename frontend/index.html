@@ -160,41 +160,6 @@
             max-height: 320px !important;
         }
 
-        .data-table {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-            backdrop-filter: blur(10px);
-        }
-
-        .data-table h3 {
-            margin-bottom: 15px;
-            color: #333;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }
-
-        th {
-            background-color: #f8f9fa;
-            font-weight: 600;
-            color: #333;
-        }
-
-        tr:hover {
-            background-color: #f5f5f5;
-        }
-
         .loading {
             text-align: center;
             padding: 40px;
@@ -261,16 +226,16 @@
 
         <div class="stats-grid" id="statsGrid">
             <div class="stat-card">
-                <h3 id="totalAuctions">-</h3>
-                <p>Total Auctions</p>
+                <h3 id="totalRegions">-</h3>
+                <p>Total Regions</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="totalTechnologies">-</h3>
+                <p>Total Technologies</p>
             </div>
             <div class="stat-card">
                 <h3 id="avgPrice">-</h3>
                 <p>Average Price (€/MWh)</p>
-            </div>
-            <div class="stat-card">
-                <h3 id="avgVolume">-</h3>
-                <p>Average Volume (MWh)</p>
             </div>
             <div class="stat-card">
                 <h3 id="totalVolume">-</h3>
@@ -280,25 +245,29 @@
 
         <div class="charts-grid">
             <div class="chart-container">
-                <h3>Clearing Price Trend</h3>
-                <canvas id="priceChart"></canvas>
+                <h3>Region Results: Volume Offered vs Allocated</h3>
+                <canvas id="regionChart"></canvas>
             </div>
             <div class="chart-container">
-                <h3>Volume Trend</h3>
-                <canvas id="volumeChart"></canvas>
+                <h3>Technology Results: Volume Offered vs Allocated</h3>
+                <canvas id="techChart"></canvas>
             </div>
         </div>
 
-        <div class="data-table">
-            <h3>Recent Auction Data</h3>
-            <div id="tableContainer">
-                <div class="loading">Loading data...</div>
+        <div class="charts-grid">
+            <div class="chart-container">
+                <h3>Price Analysis: Weighted Average Price by Region</h3>
+                <canvas id="priceChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>Volume vs Price Relationship</h3>
+                <canvas id="scatterChart"></canvas>
             </div>
         </div>
     </div>
 
     <script>
-        let priceChart, volumeChart;
+        let regionChart, techChart, priceChart, scatterChart;
         
         // API Configuration - Firebase Functions URLs
         const API_BASE = window.location.hostname === 'localhost' 
@@ -315,108 +284,153 @@
 
         // Initialize charts
         function initializeCharts() {
+            // Initialize empty charts that will be populated when data loads
+            const regionCtx = document.getElementById('regionChart').getContext('2d');
+            const techCtx = document.getElementById('techChart').getContext('2d');
             const priceCtx = document.getElementById('priceChart').getContext('2d');
-            const volumeCtx = document.getElementById('volumeChart').getContext('2d');
+            const scatterCtx = document.getElementById('scatterChart').getContext('2d');
 
-            priceChart = new Chart(priceCtx, {
-                type: 'line',
+            regionChart = new Chart(regionCtx, {
+                type: 'bar',
                 data: {
                     labels: [],
-                    datasets: [{
-                        label: 'Clearing Price (€/MWh)',
-                        data: [],
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        borderWidth: 3,
-                        fill: true,
-                        tension: 0.4
-                    }]
+                    datasets: [
+                        {
+                            label: 'Volume Offered (MWh)',
+                            data: [],
+                            backgroundColor: 'rgba(102, 126, 234, 0.7)'
+                        },
+                        {
+                            label: 'Volume Allocated (MWh)',
+                            data: [],
+                            backgroundColor: 'rgba(118, 75, 162, 0.7)'
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: {
-                            display: true,
-                            position: 'top'
-                        }
+                        legend: { position: 'top' },
+                        title: { display: true, text: 'Region Results: Volume Offered vs Allocated' }
                     },
                     scales: {
-                        y: {
-                            beginAtZero: false,
-                            title: {
-                                display: true,
-                                text: 'Price (€/MWh)'
-                            }
+                        x: { stacked: false },
+                        y: { beginAtZero: true, title: { display: true, text: 'Volume (MWh)' } }
+                    }
+                }
+            });
+
+            techChart = new Chart(techCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Volume Offered (MWh)',
+                            data: [],
+                            backgroundColor: 'rgba(102, 126, 234, 0.7)'
                         },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Auction Date'
-                            },
+                        {
+                            label: 'Volume Allocated (MWh)',
+                            data: [],
+                            backgroundColor: 'rgba(118, 75, 162, 0.7)'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: true, text: 'Technology Results: Volume Offered vs Allocated' }
+                    },
+                    scales: {
+                        x: { stacked: false },
+                        y: { beginAtZero: true, title: { display: true, text: 'Volume (MWh)' } }
+                    }
+                }
+            });
+
+            priceChart = new Chart(priceCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Weighted Average Price (€/MWh)',
+                            data: [],
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: true, text: 'Price Analysis: Weighted Average Price by Region' }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: false,
+                            title: { display: true, text: 'Price (€/MWh)' }
+                        },
+                        x: { 
+                            title: { display: true, text: 'Region' },
                             ticks: {
                                 maxRotation: 45,
-                                minRotation: 0,
-                                maxTicksLimit: 8,
-                                callback: function(value, index, values) {
-                                    const label = this.getLabelForValue(value);
-                                    if (label.length > 15) {
-                                        return label.substring(0, 12) + '...';
-                                    }
-                                    return label;
-                                }
+                                minRotation: 0
                             }
                         }
                     }
                 }
             });
 
-            volumeChart = new Chart(volumeCtx, {
-                type: 'bar',
+            scatterChart = new Chart(scatterCtx, {
+                type: 'scatter',
                 data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Volume (MWh)',
-                        data: [],
-                        backgroundColor: 'rgba(118, 75, 162, 0.8)',
-                        borderColor: '#764ba2',
-                        borderWidth: 2
-                    }]
+                    datasets: [
+                        {
+                            label: 'Regions',
+                            data: [],
+                            backgroundColor: 'rgba(102, 126, 234, 0.7)',
+                            pointRadius: 8
+                        },
+                        {
+                            label: 'Technologies',
+                            data: [],
+                            backgroundColor: 'rgba(118, 75, 162, 0.7)',
+                            pointRadius: 8
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: {
-                            display: true,
-                            position: 'top'
+                        legend: { position: 'top' },
+                        title: { display: true, text: 'Volume vs Price Relationship' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: Volume: ${context.parsed.x.toLocaleString()} MWh, Price: €${context.parsed.y.toFixed(2)}/MWh`;
+                                }
+                            }
                         }
                     },
                     scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Volume (MWh)'
-                            }
+                        x: { 
+                            type: 'linear',
+                            position: 'bottom',
+                            title: { display: true, text: 'Volume (MWh)' }
                         },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Auction Date'
-                            },
-                            ticks: {
-                                maxRotation: 45,
-                                minRotation: 0,
-                                maxTicksLimit: 8,
-                                callback: function(value, index, values) {
-                                    const label = this.getLabelForValue(value);
-                                    if (label.length > 15) {
-                                        return label.substring(0, 12) + '...';
-                                    }
-                                    return label;
-                                }
-                            }
+                        y: { 
+                            title: { display: true, text: 'Price (€/MWh)' }
                         }
                     }
                 }
@@ -425,103 +439,102 @@
 
         // Update statistics
         function updateStats(stats) {
-            document.getElementById('totalAuctions').textContent = stats.total_auctions || 0;
+            console.log('Updating stats with:', stats);
+            document.getElementById('totalRegions').textContent = stats.total_regions || 0;
+            document.getElementById('totalTechnologies').textContent = stats.total_technologies || 0;
             document.getElementById('avgPrice').textContent = stats.avg_price ? stats.avg_price.toFixed(2) : '-';
-            document.getElementById('avgVolume').textContent = stats.avg_volume ? stats.avg_volume.toFixed(1) : '-';
             document.getElementById('totalVolume').textContent = stats.total_volume ? stats.total_volume.toFixed(1) : '-';
+            console.log('Stats updated successfully');
         }
 
         // Update charts
         function updateCharts(auctions) {
-            // Format labels to be shorter and more readable
-            const formatLabel = (label) => {
-                if (!label) return '';
-                
-                // Handle different types of labels
-                if (label.includes('2025')) {
-                    // Extract month from date strings like "January 2025"
-                    const month = label.split(' ')[0];
-                    return month.substring(0, 3); // Jan, Feb, etc.
-                }
-                
-                if (label.includes('-')) {
-                    // Handle region names like "Île-de-France"
-                    const parts = label.split('-');
-                    if (parts.length > 1) {
-                        return parts[0].substring(0, 3) + '-' + parts[1].substring(0, 3);
-                    }
-                }
-                
-                // For other labels, truncate to 8 characters
-                return label.length > 8 ? label.substring(0, 8) + '...' : label;
-            };
-
-            const dates = auctions.map(a => formatLabel(a.auction_date));
-            const prices = auctions.map(a => a.clearing_price);
-            const volumes = auctions.map(a => a.volume_mwh);
-
-            // Update price chart with tooltip data
-            priceChart.data.labels = dates;
-            priceChart.data.datasets[0].data = prices;
-            priceChart.options.plugins.tooltip = {
-                callbacks: {
-                    title: function(context) {
-                        const index = context[0].dataIndex;
-                        return auctions[index]?.auction_date || context[0].label;
-                    }
-                }
-            };
-            priceChart.update();
-
-            // Update volume chart with tooltip data
-            volumeChart.data.labels = dates;
-            volumeChart.data.datasets[0].data = volumes;
-            volumeChart.options.plugins.tooltip = {
-                callbacks: {
-                    title: function(context) {
-                        const index = context[0].dataIndex;
-                        return auctions[index]?.auction_date || context[0].label;
-                    }
-                }
-            };
-            volumeChart.update();
-        }
-
-        // Update data table
-        function updateTable(auctions) {
-            const tableContainer = document.getElementById('tableContainer');
+            // Filter only results data (exclude calendar data)
+            const resultsData = auctions.filter(a => a.data_type === 'results');
             
-            if (auctions.length === 0) {
-                tableContainer.innerHTML = '<div class="loading">No data available</div>';
+            // Separate region and technology data based on auction_date content
+            const regionData = resultsData.filter(a => {
+                const name = a.auction_date;
+                // Regions are typically longer names with spaces and special characters
+                return name && name.length > 3 && (name.includes(' ') || name.includes('-') || name.includes('é'));
+            });
+            
+            const techData = resultsData.filter(a => {
+                const name = a.auction_date;
+                // Technologies are typically short names like "Wind", "Solar", "Hydro", "Thermal"
+                return name && (name === 'Wind' || name === 'Solar' || name === 'Hydro' || name === 'Thermal');
+            });
+
+            // If no results data, try using the new data structure with type field
+            if (resultsData.length === 0) {
+                const regionDataNew = auctions.filter(a => a.type === 'region');
+                const techDataNew = auctions.filter(a => a.type === 'technology');
+                
+                // Region chart data
+                const regionLabels = regionDataNew.map(a => a.name);
+                const regionOffered = regionDataNew.map(a => a.volume_offered);
+                const regionAllocated = regionDataNew.map(a => a.volume_allocated);
+                const regionPrices = regionDataNew.map(a => a.weighted_avg_price);
+
+                // Technology chart data
+                const techLabels = techDataNew.map(a => a.name);
+                const techOffered = techDataNew.map(a => a.volume_offered);
+                const techAllocated = techDataNew.map(a => a.volume_allocated);
+                const techPrices = techDataNew.map(a => a.weighted_avg_price);
+
+                // Update region chart
+                regionChart.data.labels = regionLabels;
+                regionChart.data.datasets[0].data = regionOffered;
+                regionChart.data.datasets[1].data = regionAllocated;
+                regionChart.update();
+
+                // Update technology chart
+                techChart.data.labels = techLabels;
+                techChart.data.datasets[0].data = techOffered;
+                techChart.data.datasets[1].data = techAllocated;
+                techChart.update();
+
+                // Update price chart (combine regions and technologies)
+                const allLabels = [...regionLabels, ...techLabels];
+                const allPrices = [...regionPrices, ...techPrices];
+                priceChart.data.labels = allLabels;
+                priceChart.data.datasets[0].data = allPrices;
+                priceChart.update();
+
+                // Update scatter chart
+                const regionScatterData = regionDataNew.map(a => ({
+                    x: a.volume_allocated,
+                    y: a.weighted_avg_price
+                }));
+                const techScatterData = techDataNew.map(a => ({
+                    x: a.volume_allocated,
+                    y: a.weighted_avg_price
+                }));
+                scatterChart.data.datasets[0].data = regionScatterData;
+                scatterChart.data.datasets[1].data = techScatterData;
+                scatterChart.update();
                 return;
             }
 
-            const table = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Product Type</th>
-                            <th>Volume (MWh)</th>
-                            <th>Clearing Price (€/MWh)</th>
-                            <th>Participants</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${auctions.map(auction => `
-                            <tr>
-                                <td>${auction.auction_date}</td>
-                                <td>${auction.product_type}</td>
-                                <td>${auction.volume_mwh.toFixed(1)}</td>
-                                <td>${auction.clearing_price.toFixed(2)}</td>
-                                <td>${auction.participants}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-            
-            tableContainer.innerHTML = table;
+            // Region chart data
+            const regionLabels = regionData.map(a => a.auction_date);
+            const regionVolumes = regionData.map(a => a.volume_mwh);
+
+            // Technology chart data
+            const techLabels = techData.map(a => a.auction_date);
+            const techVolumes = techData.map(a => a.volume_mwh);
+
+            // Update region chart
+            regionChart.data.labels = regionLabels;
+            regionChart.data.datasets[0].data = regionVolumes;
+            regionChart.data.datasets[1].data = regionVolumes; // Same data for both offered/allocated since we only have one volume field
+            regionChart.update();
+
+            // Update technology chart
+            techChart.data.labels = techLabels;
+            techChart.data.datasets[0].data = techVolumes;
+            techChart.data.datasets[1].data = techVolumes; // Same data for both offered/allocated
+            techChart.update();
         }
 
         // Show message
@@ -550,7 +563,6 @@
 
                 updateStats(stats);
                 updateCharts(auctions);
-                updateTable(auctions);
 
             } catch (error) {
                 console.error('Error loading data:', error);
