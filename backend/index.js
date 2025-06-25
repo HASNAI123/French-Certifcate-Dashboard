@@ -78,71 +78,9 @@ async function scrapeEEXData() {
       });
     });
 
-    // If no structured data found, create sample data for demonstration
+    // If no structured data found, throw an error instead of creating sample data
     if (auctionData.length === 0) {
-      console.log('No structured data found, creating sample data...');
-      const sampleData = [
-        {
-          auction_date: '2024-01-15',
-          product_type: 'French Guarantees of Origin',
-          volume_mwh: 1250.5,
-          clearing_price: 45.20,
-          total_volume: 1250.5,
-          participants: 25
-        },
-        {
-          auction_date: '2024-01-22',
-          product_type: 'French Guarantees of Origin',
-          volume_mwh: 1380.2,
-          clearing_price: 47.80,
-          total_volume: 1380.2,
-          participants: 28
-        },
-        {
-          auction_date: '2024-01-29',
-          product_type: 'French Guarantees of Origin',
-          volume_mwh: 1120.8,
-          clearing_price: 43.90,
-          total_volume: 1120.8,
-          participants: 22
-        },
-        {
-          auction_date: '2024-02-05',
-          product_type: 'French Guarantees of Origin',
-          volume_mwh: 1450.3,
-          clearing_price: 49.10,
-          total_volume: 1450.3,
-          participants: 31
-        },
-        {
-          auction_date: '2024-02-12',
-          product_type: 'French Guarantees of Origin',
-          volume_mwh: 1320.7,
-          clearing_price: 46.50,
-          total_volume: 1320.7,
-          participants: 27
-        }
-      ];
-      
-      // Insert sample data
-      const insertStmt = db.prepare(`
-        INSERT INTO auctions (auction_date, product_type, volume_mwh, clearing_price, total_volume, participants)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
-      
-      sampleData.forEach(data => {
-        insertStmt.run(
-          data.auction_date,
-          data.product_type,
-          data.volume_mwh,
-          data.clearing_price,
-          data.total_volume,
-          data.participants
-        );
-      });
-      
-      console.log('Sample data inserted successfully');
-      return sampleData;
+      throw new Error('No auction data found on EEX website. The page structure may have changed or data may not be available.');
     }
 
     // Insert scraped data

@@ -1,10 +1,9 @@
 /**
- * Import function triggers from their respective submodules:
- *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
+ * Cloud Functions for French Energy Certificate Auctions
+ * - Scrapes auction results from the EEX website
+ * - Stores structured data in Firestore
+ * - Provides API endpoints for dashboard and statistics
+ * - Includes a scheduled function for daily updates
  */
 
 const functions = require('firebase-functions');
@@ -19,7 +18,12 @@ admin.initializeApp();
 // Get Firestore database
 const db = admin.firestore();
 
-// Function to scrape EEX French energy auction data
+/**
+ * Scrapes the EEX French auctions page for the latest results.
+ * Extracts both region and technology tables, parses volume and price data,
+ * and stores the results in Firestore.
+ * Returns the structured data array.
+ */
 async function scrapeEEXData() {
   try {
     console.log('Starting data extraction from EEX...');
@@ -36,7 +40,7 @@ async function scrapeEEXData() {
     const $ = cheerio.load(response.data);
     const auctionData = [];
 
-    // Find the Results section
+    // Try to find the Results section by heading
     const resultsSection = $("h2:contains('Results')").closest('div.container, section, div.row').parent();
     // Fallback: just look for all tables after the Results heading
     let foundResults = false;
@@ -45,6 +49,7 @@ async function scrapeEEXData() {
       if ($(el).text().trim().toLowerCase() === 'results') {
         foundResults = true;
       }
+      // If we've found the Results heading, grab the next two tables (region and technology)
       if (foundResults && $(el).nextAll('table').length >= 2) {
         resultsTables = $(el).nextAll('table').slice(0, 2).toArray();
         return false;
@@ -52,6 +57,7 @@ async function scrapeEEXData() {
     });
 
     // If not found, fallback to all tables with Region/Technology headers
+    // This ensures robustness if the EEX page layout changes.
     if (resultsTables.length < 2) {
       resultsTables = [];
       $('table').each((i, table) => {
@@ -97,22 +103,9 @@ async function scrapeEEXData() {
       });
     });
 
-    // If no data found, create sample data for demonstration
+    // If no data found, throw an error instead of creating sample data
     if (auctionData.length === 0) {
-      console.log('No structured data found, creating sample data...');
-      const sampleData = [
-        { name: 'Auvergne-Rhône-Alpes', type: 'region', volume_offered: 292973, volume_allocated: 292973, weighted_avg_price: 0.61, scraped_at: admin.firestore.FieldValue.serverTimestamp() },
-        { name: 'Wind', type: 'technology', volume_offered: 2238308, volume_allocated: 2238308, weighted_avg_price: 0.60, scraped_at: admin.firestore.FieldValue.serverTimestamp() }
-      ];
-      // Insert sample data into Firestore
-      const batch = db.batch();
-      sampleData.forEach(data => {
-        const docRef = db.collection('auctions').doc();
-        batch.set(docRef, data);
-      });
-      await batch.commit();
-      console.log('Sample data inserted successfully');
-      return sampleData;
+      throw new Error('No auction data found on EEX website. The page structure may have changed or data may not be available.');
     }
 
     // Insert scraped data into Firestore
@@ -132,9 +125,10 @@ async function scrapeEEXData() {
   }
 }
 
-// Firebase Functions
-
-// Get all auction data
+/**
+ * HTTP endpoint to get all auction data from Firestore.
+ * Returns an array of auction records, most recent first.
+ */
 exports.getAuctions = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     try {
@@ -157,7 +151,11 @@ exports.getAuctions = functions.https.onRequest((req, res) => {
   });
 });
 
-// Get auction statistics
+/**
+ * HTTP endpoint to get auction statistics (average price, total volume, etc).
+ * Computes stats for both region and technology records.
+ * Returns an object with summary statistics for the dashboard.
+ */
 exports.getStatistics = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     try {
@@ -218,15 +216,25 @@ exports.getStatistics = functions.https.onRequest((req, res) => {
   });
 });
 
-// Trigger data extraction
-exports.extractData = functions.https.onRequest((req, res) => {
+/**
+ * Get current API usage
+ */
+exports.getApiUsage = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     try {
-      const data = await scrapeEEXData();
-      res.json({ 
-        message: 'Data extraction completed successfully',
-        records_added: data.length,
-        data: data
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      const usageDoc = await db.collection('api_usage').doc(today).get();
+      
+      let usage = 0;
+      if (usageDoc.exists) {
+        usage = usageDoc.data().count || 0;
+      }
+      
+      res.json({
+        today: today,
+        calls_used: usage,
+        calls_remaining: Math.max(0, 20 - usage),
+        daily_limit: 20
       });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -234,7 +242,55 @@ exports.extractData = functions.https.onRequest((req, res) => {
   });
 });
 
-// Clear all data
+/**
+ * Trigger data extraction
+ */
+exports.extractData = functions.https.onRequest((req, res) => {
+  return cors(req, res, async () => {
+    try {
+      // Check daily API limit
+      const today = new Date().toISOString().split('T')[0];
+      const usageDoc = await db.collection('api_usage').doc(today).get();
+      
+      let currentUsage = 0;
+      if (usageDoc.exists) {
+        currentUsage = usageDoc.data().count || 0;
+      }
+      
+      if (currentUsage >= 20) {
+        return res.status(429).json({ 
+          error: 'Daily API limit reached (20 calls). Please try again tomorrow.',
+          calls_used: currentUsage,
+          calls_remaining: 0,
+          daily_limit: 20
+        });
+      }
+      
+      // Increment usage counter
+      await db.collection('api_usage').doc(today).set({
+        count: currentUsage + 1,
+        last_updated: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      
+      const data = await scrapeEEXData();
+      res.json({ 
+        message: 'Data extraction completed successfully',
+        records_added: data.length,
+        data: data,
+        calls_used: currentUsage + 1,
+        calls_remaining: 19 - currentUsage,
+        daily_limit: 20
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+});
+
+/**
+ * HTTP endpoint to clear all auction data from Firestore.
+ * Use with caution! This will delete all records.
+ */
 exports.clearData = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     try {

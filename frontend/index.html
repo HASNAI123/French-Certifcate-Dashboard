@@ -184,6 +184,57 @@
             border: 1px solid #c3e6cb;
         }
 
+        .data-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(248, 249, 250, 0.8);
+            border-radius: 8px;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .info-item {
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: #495057;
+        }
+
+        .info-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-item strong {
+            color: #333;
+            margin-right: 8px;
+        }
+
+        .update-note {
+            text-align: center;
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+
+        .api-usage {
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        .usage-info {
+            margin-bottom: 10px;
+        }
+
+        .usage-bar {
+            background-color: #f0f0f0;
+            height: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .usage-fill {
+            background-color: #667eea;
+            height: 100%;
+            border-radius: 10px;
+        }
+
         @media (max-width: 768px) {
             .charts-grid {
                 grid-template-columns: 1fr;
@@ -222,6 +273,25 @@
                 <button class="btn btn-danger" onclick="clearData()">Clear All Data</button>
             </div>
             <div id="message"></div>
+            <div class="data-info">
+                <div class="info-item">
+                    <strong>Last Updated:</strong> <span id="lastUpdated">-</span>
+                </div>
+                <div class="info-item">
+                    <strong>Auction Month:</strong> <span id="auctionMonth">-</span>
+                </div>
+            </div>
+            <div class="update-note">
+                <small>💡 Data is automatically updated every 24 hours</small>
+            </div>
+            <div class="api-usage">
+                <div class="usage-info">
+                    <strong>API Calls Remaining:</strong> <span id="remainingCalls">-</span> / <span id="dailyLimit">20</span>
+                </div>
+                <div class="usage-bar">
+                    <div class="usage-fill" id="usageFill"></div>
+                </div>
+            </div>
         </div>
 
         <div class="stats-grid" id="statsGrid">
@@ -279,7 +349,8 @@
             auctions: `${API_BASE}/getAuctions`,
             statistics: `${API_BASE}/getStatistics`,
             extractData: `${API_BASE}/extractData`,
-            clearData: `${API_BASE}/clearData`
+            clearData: `${API_BASE}/clearData`,
+            apiUsage: `${API_BASE}/getApiUsage`
         };
 
         // Initialize charts
@@ -546,6 +617,44 @@
             }, 5000);
         }
 
+        // Update data info (last updated time and auction month)
+        function updateDataInfo(auctions) {
+            // Update last updated time
+            const now = new Date();
+            document.getElementById('lastUpdated').textContent = now.toLocaleString();
+            
+            // Try to determine auction month from the data
+            if (auctions.length > 0) {
+                // Look for auction month in the data
+                let auctionMonth = 'Unknown';
+                
+                // Check if there's a scraped_at timestamp
+                const latestRecord = auctions[0];
+                if (latestRecord.scraped_at) {
+                    const scrapedDate = latestRecord.scraped_at._seconds ? 
+                        new Date(latestRecord.scraped_at._seconds * 1000) : 
+                        new Date(latestRecord.scraped_at);
+                    auctionMonth = scrapedDate.toLocaleDateString('en-US', { 
+                        year: 'numeric', 
+                        month: 'long' 
+                    });
+                }
+                
+                // If we can't determine from timestamp, try to infer from data
+                if (auctionMonth === 'Unknown') {
+                    // This is the current month's auction data
+                    auctionMonth = now.toLocaleDateString('en-US', { 
+                        year: 'numeric', 
+                        month: 'long' 
+                    });
+                }
+                
+                document.getElementById('auctionMonth').textContent = auctionMonth;
+            } else {
+                document.getElementById('auctionMonth').textContent = 'No data available';
+            }
+        }
+
         // Load data from API
         async function loadData() {
             try {
@@ -563,10 +672,45 @@
 
                 updateStats(stats);
                 updateCharts(auctions);
+                updateDataInfo(auctions);
 
             } catch (error) {
                 console.error('Error loading data:', error);
                 showMessage('Error loading data: ' + error.message, 'error');
+            }
+        }
+
+        // Load API usage
+        async function loadApiUsage() {
+            try {
+                const response = await fetch(API_ENDPOINTS.apiUsage);
+                if (response.ok) {
+                    const usage = await response.json();
+                    updateApiUsageDisplay(usage);
+                }
+            } catch (error) {
+                console.error('Error loading API usage:', error);
+            }
+        }
+
+        // Update API usage display
+        function updateApiUsageDisplay(usage) {
+            const remainingCalls = document.getElementById('remainingCalls');
+            const usageFill = document.getElementById('usageFill');
+            
+            remainingCalls.textContent = usage.calls_remaining;
+            
+            // Update progress bar
+            const percentage = ((usage.daily_limit - usage.calls_remaining) / usage.daily_limit) * 100;
+            usageFill.style.width = `${percentage}%`;
+            
+            // Change color based on usage
+            if (usage.calls_remaining <= 5) {
+                usageFill.style.backgroundColor = '#dc3545'; // Red for low remaining
+            } else if (usage.calls_remaining <= 10) {
+                usageFill.style.backgroundColor = '#ffc107'; // Yellow for medium remaining
+            } else {
+                usageFill.style.backgroundColor = '#667eea'; // Blue for plenty remaining
             }
         }
 
@@ -579,12 +723,22 @@
                     method: 'POST'
                 });
 
+                if (response.status === 429) {
+                    const errorData = await response.json();
+                    showMessage(`Daily API limit reached! ${errorData.calls_remaining} calls remaining.`, 'error');
+                    await loadApiUsage(); // Refresh usage display
+                    return;
+                }
+
                 if (!response.ok) {
                     throw new Error('Failed to extract data');
                 }
 
                 const result = await response.json();
                 showMessage(`Data extraction completed! Added ${result.records_added} new records.`, 'success');
+                
+                // Update API usage display
+                updateApiUsageDisplay(result);
                 
                 // Reload data to show updates
                 await loadData();
@@ -623,6 +777,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             initializeCharts();
             loadData();
+            loadApiUsage();
         });
     </script>
 </body>
